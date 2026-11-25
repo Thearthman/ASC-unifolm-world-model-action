@@ -128,3 +128,8 @@ Data/Pretrained
 Data/utils.py
 Experiment/checkpoint
 Experiment/log
+
+# Local UnifoLM-WMA weights and run artifacts
+/.direnv/
+/checkpoints/
+/outputs/

@@ -32,24 +32,35 @@
 - [x] Deployment
 
 ## ⚙️  Installation
+
+The inference and fine-tuning environment uses `flake.lock` for Nix tools and
+`uv.lock` for Python packages. It targets x86-64 Linux with an NVIDIA driver
+that supports CUDA 12.8 and the installed GPU. No Conda environment or system
+CUDA toolkit is needed. The real-robot client has its own
+[setup instructions](unitree_deploy/README.md).
+
+From the repository root, enter the shell or run a single command:
+
+```bash
+nix develop
+# Or, without entering a shell:
+nix develop --command bash scripts/run_world_model_interaction.sh
 ```
-conda create -n unifolm-wma python==3.10.18
-conda activate unifolm-wma
 
-conda install pinocchio=3.2.0 -c conda-forge -y
-conda install ffmpeg=7.1.1 -c conda-forge
+The first entry installs Python 3.10.20 and the locked CUDA wheels into a
+project-local `.venv`. It requires network access and several GB of disk space
+in addition to the model checkpoint.
 
-git clone --recurse-submodules https://github.com/unitreerobotics/unifolm-world-model-action.git
+With a direnv hook already enabled in your shell, run `direnv allow` once from
+this directory. Direnv uses Nix to sync the same `.venv` and activates it when
+entering the directory. This works with rootless `nix-portable` on `itx`, where
+Nix tools are only available inside `nix develop`; commands run directly from
+the direnv shell use the host `ffmpeg`.
 
-# If you already downloaded the repo:
-cd unifolm-world-model-action
-git submodule update --init --recursive
+Nix uses the Git source when run in this repository. If adding new flake files,
+make them visible with `git add` (or `git add -N`). Avoid `path:.`, which can
+copy ignored checkpoints and virtual environments into the Nix store.
 
-pip install -e .
-
-cd external/dlimp
-pip install -e .
-```
 ## 🧰 Model Checkpoints
 | Model | Description | Link|
 |---------|-------|------|

@@ -6,11 +6,9 @@ from einops import rearrange, repeat
 from functools import partial
 
 try:
-    import xformers
-    import xformers.ops
-    XFORMERS_IS_AVAILBLE = True
-except:
-    XFORMERS_IS_AVAILBLE = False
+    import xformers.ops as xops
+except ImportError:
+    xops = None
 
 from unifolm_wma.utils.common import (
     checkpoint,
@@ -18,6 +16,15 @@ from unifolm_wma.utils.common import (
     default,
 )
 from unifolm_wma.utils.basics import zero_module
+
+
+def memory_efficient_attention(q, k, v, attn_bias=None):
+    # xFormers 0.0.31.post1 can dispatch Hopper-only FlashAttention 3 on
+    # Blackwell. CUTLASS supports Blackwell, including additive action masks.
+    op = None
+    if q.is_cuda and torch.cuda.get_device_capability(q.device) >= (10, 0):
+        op = xops.MemoryEfficientAttentionCutlassOp
+    return xops.memory_efficient_attention(q, k, v, attn_bias=attn_bias, op=op)
 
 
 class RelativePosition(nn.Module):
@@ -87,7 +94,7 @@ class CrossAttention(nn.Module):
                 num_units=dim_head, max_relative_position=temporal_length)
         else:
             ## only used for spatial attention, while NOT for temporal attention
-            if XFORMERS_IS_AVAILBLE and temporal_length is None:
+            if xops is not None and temporal_length is None:
                 self.forward = self.efficient_forward
 
         self.video_length = video_length
@@ -292,11 +299,7 @@ class CrossAttention(nn.Module):
                         b * self.heads, t.shape[1], self.dim_head).contiguous(),
                 (k, v),
             )
-            out = xformers.ops.memory_efficient_attention(q,
-                                                          k,
-                                                          v,
-                                                          attn_bias=None,
-                                                          op=None)
+            out = memory_efficient_attention(q, k, v)
             out = (out.unsqueeze(0).reshape(
                 b, self.heads, out.shape[1],
                 self.dim_head).permute(0, 2, 1,
@@ -312,11 +315,7 @@ class CrossAttention(nn.Module):
                         ),
                 (k_ip, v_ip),
             )
-            out_ip = xformers.ops.memory_efficient_attention(q,
-                                                             k_ip,
-                                                             v_ip,
-                                                             attn_bias=None,
-                                                             op=None)
+            out_ip = memory_efficient_attention(q, k_ip, v_ip)
             out_ip = (out_ip.unsqueeze(0).reshape(
                 b, self.heads, out_ip.shape[1],
                 self.dim_head).permute(0, 2, 1,
@@ -332,11 +331,7 @@ class CrossAttention(nn.Module):
                         ),
                 (k_as, v_as),
             )
-            out_as = xformers.ops.memory_efficient_attention(q,
-                                                             k_as,
-                                                             v_as,
-                                                             attn_bias=None,
-                                                             op=None)
+            out_as = memory_efficient_attention(q, k_as, v_as)
             out_as = (out_as.unsqueeze(0).reshape(
                 b, self.heads, out_as.shape[1],
                 self.dim_head).permute(0, 2, 1,
@@ -356,8 +351,7 @@ class CrossAttention(nn.Module):
                     b * self.heads, attn_mask_aa.shape[1], attn_mask_aa.shape[2])
             attn_mask_aa = attn_mask_aa.to(q.dtype)
 
-            out_aa = xformers.ops.memory_efficient_attention(
-                q, k_aa, v_aa, attn_bias=attn_mask_aa, op=None)
+            out_aa = memory_efficient_attention(q, k_aa, v_aa, attn_bias=attn_mask_aa)
 
             out_aa = (out_aa.unsqueeze(0).reshape(
                 b, self.heads, out_aa.shape[1],
